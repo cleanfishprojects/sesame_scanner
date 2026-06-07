@@ -143,6 +143,71 @@
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('hidden-canvas');
 
+        const localMenuCache = {
+            "chick-fil-a": {
+                status: "SUCCESS",
+                verdict: "Risky — sesame buns are used on several sandwiches. Always request a plain bun and confirm with staff.",
+                safe: ["Waffle Potato Fries", "Plain Iced Tea", "Fruit Cup", "Side Salad (no croutons, bring own dressing)"],
+                modify: [{"item": "Grilled Chicken Sandwich", "fix": "Request a non-sesame bun or lettuce wrap. Confirm with staff."}],
+                unsafe: ["Classic Chicken Sandwich (sesame seed bun)", "Spicy Deluxe Sandwich (sesame seed bun)", "Chicken Biscuit (sesame risk)"]
+            },
+            "mcdonalds": {
+                status: "SUCCESS",
+                verdict: "Big Mac and Quarter Pounder buns contain sesame seeds. Stick to plain burgers on non-sesame buns.",
+                safe: ["World Famous Fries", "Apple Slices", "Side Salad", "Hamburger (plain bun — confirm sesame-free)"],
+                modify: [{"item": "McDouble / Hamburger", "fix": "Ask for a plain bun without sesame seeds — confirm with staff."}],
+                unsafe: ["Big Mac (sesame seed bun)", "Quarter Pounder (sesame seed bun)", "McChicken (sesame seed bun)"]
+            },
+            "taco bell": {
+                status: "SUCCESS",
+                verdict: "Good news — Taco Bell uses very little sesame. Most items are safe, but check specialty sauces.",
+                safe: ["Crunchy Tacos", "Bean Burrito", "Chips & Nacho Cheese", "Black Beans & Rice", "Guacamole"],
+                modify: [{"item": "Specialty Bowls", "fix": "Confirm no sesame-based dressing or sauce added."}],
+                unsafe: ["Any item with an Asian-style sesame sauce (limited time items)"]
+            },
+            "wendys": {
+                status: "SUCCESS",
+                verdict: "Most buns at Wendy's do not contain sesame, but always confirm with staff as recipes change.",
+                safe: ["Plain Baked Potato", "French Fries", "Frosty", "Side Salad"],
+                modify: [{"item": "Dave's Single / Double", "fix": "Confirm bun is sesame-free with staff."}],
+                unsafe: ["Any Asian Cashew Chicken Salad if available (sesame dressing)", "Specialty buns — always verify"]
+            },
+            "starbucks": {
+                status: "SUCCESS",
+                verdict: "Most drinks are safe. Watch out for sesame bagels and some bakery items.",
+                safe: ["All coffees and lattes", "Frappuccinos", "Most teas", "Cake Pops", "Croissants"],
+                modify: [{"item": "Bakery items", "fix": "Check label — some items may share equipment with sesame products."}],
+                unsafe: ["Sesame Bagel", "Everything Bagel (contains sesame)", "Some Asian-inspired snack items"]
+            },
+            "red robin": {
+                status: "SUCCESS",
+                verdict: "Brioche and specialty buns often contain sesame. Request a sesame-free bun and confirm with your server.",
+                safe: ["Steak Fries (unseasoned)", "Side Salad", "Onion Rings (confirm batter)"],
+                modify: [
+                    {"item": "Gourmet Burgers", "fix": "Request a sesame-free bun — Red Robin can accommodate, just ask."},
+                    {"item": "Chicken Dishes", "fix": "Confirm no sesame oil or seeds in marinade."}
+                ],
+                unsafe: ["Standard Brioche Bun (contains sesame)", "Any burger served on default bun without modification", "Teriyaki-style burgers (sesame oil)"]
+            },
+            "tropical smoothie": {
+                status: "SUCCESS",
+                verdict: "Smoothies are generally safe — no sesame in standard recipes. Watch out for wraps and flatbreads.",
+                safe: ["Most fruit smoothies", "Green smoothies", "Fresh fruit sides", "Acai bowls (confirm toppings)"],
+                modify: [{"item": "Wraps / Flatbreads", "fix": "Confirm no sesame seeds on the flatbread or in dressings."}],
+                unsafe: ["Any wrap or flatbread with sesame seeds on bread", "Asian-style wraps with sesame dressing"]
+            },
+            "sora sushi": {
+                status: "SUCCESS",
+                verdict: "High sesame risk — sesame seeds and sesame oil are common in sushi and Japanese cuisine. Order very carefully.",
+                safe: ["Plain Edamame (no seasoning)", "Plain Miso Soup (confirm no sesame oil)", "Plain Cucumber Salad (no dressing)"],
+                modify: [
+                    {"item": "Sashimi", "fix": "Order plain, no sauce, no sesame seeds, no sesame oil. Confirm with chef."},
+                    {"item": "Plain Rice", "fix": "Request rice with no sesame seeds — some sushi rice is garnished with sesame."}
+                ],
+                unsafe: ["Most rolls (sesame seeds on outside)", "Teriyaki dishes (sesame oil in sauce)", "Seaweed salad (sesame oil)", "Spicy mayo (often contains sesame)", "Goma sauce (sesame-based)"]
+            }
+        };
+
         const allergenRules = {
             name: "a person with a sesame allergy",
             instructions: `STRICT FORBIDDEN ITEMS (sesame allergy): sesame, sesame seeds, sesame oil, sesame flour,
@@ -230,18 +295,30 @@
 
             showLoading(`Checking ${restaurantInput}...`);
 
-            const promptText = `You are a dietary assistant helping ${allergenRules.name}. Rules: ${allergenRules.instructions}.
-            Evaluate the standard menu of "${restaurantInput}". Pay attention to hidden sesame in sauces, dressings, bread, buns, and marinades.
-            Output strictly JSON without any markdown formatting:
-            {
-              "status": "SUCCESS",
-              "verdict": "A quick summary of how safe this restaurant is for a sesame allergy.",
-              "safe": ["3-4 completely safe items"],
-              "modify": [{"item": "Item Name", "fix": "What to change or ask for"}],
-              "unsafe": ["3-4 items that contain sesame or are high risk"]
-            }`;
+            const searchKey = restaurantInput.toLowerCase();
+            let cachedResult = null;
+            for (const [key, value] of Object.entries(localMenuCache)) {
+                if (key.toLowerCase() === searchKey) {
+                    cachedResult = value;
+                    break;
+                }
+            }
 
-            await callGemini({ contents: [{ parts: [{ text: promptText }] }] }, renderMenuResults);
+            if (cachedResult) {
+                setTimeout(() => renderMenuResults(cachedResult), 400);
+            } else {
+                const promptText = `You are a dietary assistant helping ${allergenRules.name}. Rules: ${allergenRules.instructions}.
+                Evaluate the standard menu of "${restaurantInput}". Pay attention to hidden sesame in sauces, dressings, bread, buns, and marinades.
+                Output strictly JSON without any markdown formatting:
+                {
+                  "status": "SUCCESS",
+                  "verdict": "A quick summary of how safe this restaurant is for a sesame allergy.",
+                  "safe": ["3-4 completely safe items"],
+                  "modify": [{"item": "Item Name", "fix": "What to change or ask for"}],
+                  "unsafe": ["3-4 items that contain sesame or are high risk"]
+                }`;
+                await callGemini({ contents: [{ parts: [{ text: promptText }] }] }, renderMenuResults);
+            }
         }
 
         async function callGemini(payload, renderCallback) {
