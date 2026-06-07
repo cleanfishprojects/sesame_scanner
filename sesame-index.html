@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sesame Allergen Scanner</title>
+    <script>
+        window.onerror = function(msg, url, line) {
+            alert("Code Error on line " + line + ":\n" + msg);
+            return false;
+        };
+    </script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --accent-color: #3b82f6;
+            --text-color: #ffffff;
+            --safe-color: #10b981;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body {
+            background-color: var(--bg-color); color: var(--text-color); padding: 15px;
+            display: flex; flex-direction: column; align-items: center; min-height: 100vh; transition: background-color 0.3s ease;
+        }
+        .app-container { width: 100%; max-width: 450px; display: flex; flex-direction: column; gap: 15px; }
+        header { text-align: center; margin-bottom: 5px; }
+        header h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
+        .allergen-badge {
+            display: inline-block; background-color: #3b82f6; color: white;
+            font-size: 0.8rem; font-weight: 700; padding: 4px 12px; border-radius: 20px;
+            margin-top: 8px; letter-spacing: 0.5px; text-transform: uppercase;
+        }
+        .segmented-control {
+            display: flex; background-color: var(--card-bg); padding: 4px;
+            border-radius: 12px; border: 1px solid #333;
+        }
+        .seg-btn {
+            flex: 1; background: none; border: none; color: #888; padding: 10px 5px;
+            font-weight: 600; font-size: 0.9rem; cursor: pointer; border-radius: 9px; transition: all 0.2s ease;
+        }
+        .seg-btn.active { background-color: var(--accent-color); color: white; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4); }
+        .camera-box {
+            position: relative; width: 100%; aspect-ratio: 4 / 3; background-color: #000;
+            border-radius: 16px; overflow: hidden; border: 2px solid #333; box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        #webcam { width: 100%; height: 100%; object-fit: cover; }
+        #captured-image-view { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+        .scan-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: none;
+            background: linear-gradient(rgba(59, 130, 246, 0) 45%, rgba(59, 130, 246, 0.4) 50%, rgba(59, 130, 246, 0) 55%);
+            background-size: 100% 200%; animation: scanAnimation 2s linear infinite;
+        }
+        @keyframes scanAnimation { 0% { background-position: 0% 0%; } 100% { background-position: 0% 100%; } }
+        #restaurant-ui {
+            display: none; flex-direction: column; gap: 12px;
+            background-color: var(--card-bg); padding: 15px; border-radius: 16px; border: 1px solid #333;
+        }
+        .restaurant-input {
+            width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #444;
+            background-color: #121212; color: white; font-size: 1rem;
+        }
+        .quick-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tag-btn {
+            background-color: #333; color: #ddd; border: none; padding: 8px 12px;
+            border-radius: 20px; font-size: 0.85rem; cursor: pointer;
+        }
+        .tag-btn:active { transform: scale(0.95); }
+        .controls { display: flex; gap: 10px; }
+        .btn {
+            flex: 1; padding: 16px; font-size: 1rem; font-weight: 700; border: none; border-radius: 12px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background-color: #ffffff; color: #000000; }
+        .btn-secondary { background-color: #333; color: #fff; }
+        .result-panel { background-color: var(--card-bg); border-radius: 16px; padding: 20px; border: 1px solid #333; display: none; }
+        .result-status-header { font-size: 1.4rem; font-weight: 800; margin-bottom: 10px; }
+        .result-body { font-size: 0.95rem; line-height: 1.5; color: #ccc; margin-bottom: 10px; }
+        .menu-category { margin-top: 15px; padding: 12px; border-radius: 8px; }
+        .cat-safe { background-color: rgba(16, 185, 129, 0.1); border-left: 4px solid var(--safe-color); }
+        .cat-modify { background-color: rgba(245, 158, 11, 0.1); border-left: 4px solid var(--warning-color); }
+        .cat-unsafe { background-color: rgba(239, 68, 68, 0.1); border-left: 4px solid var(--danger-color); }
+        .flagged-items { margin-top: 10px; padding: 10px; background-color: rgba(255, 255, 255, 0.05); border-radius: 8px; border-left: 4px solid transparent; }
+        body.state-safe { background-color: #064e3b; }
+        body.state-danger { background-color: #7f1d1d; }
+        body.state-warning { background-color: #78350f; }
+        body.state-loading { background-color: #1e1e1e; }
+        #hidden-canvas { display: none; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>🛡️ Allergen Scanner</h1>
+            <div class="allergen-badge">⚠ Sesame Allergy</div>
+        </header>
+        <div class="segmented-control">
+            <button class="seg-btn active" id="mode-scan-btn" onclick="setMode('scan')">📷 Scan Label</button>
+            <button class="seg-btn" id="mode-menu-btn" onclick="setMode('menu')">🍔 Menu Search</button>
+        </div>
+        <div id="scanner-ui">
+            <div class="camera-box">
+                <video id="webcam" autoplay playsinline muted></video>
+                <img id="captured-image-view" alt="Captured Ingredient List">
+                <div class="scan-overlay" id="scanner-line"></div>
+            </div>
+            <div class="controls" style="margin-top: 15px;">
+                <button class="btn btn-secondary" id="reset-btn" onclick="resetScanner()" style="display: none;">📷 New Scan</button>
+                <button class="btn btn-primary" id="snap-btn" onclick="captureAndAnalyze()">⚡ Scan Ingredients</button>
+            </div>
+        </div>
+        <div id="restaurant-ui">
+            <input type="text" id="restaurant-input" class="restaurant-input" placeholder="Enter restaurant name...">
+            <div class="quick-tags">
+                <button class="tag-btn" onclick="fillRestaurant('Chick-fil-A')">Chick-fil-A</button>
+                <button class="tag-btn" onclick="fillRestaurant('McDonalds')">McDonald's</button>
+                <button class="tag-btn" onclick="fillRestaurant('Taco Bell')">Taco Bell</button>
+                <button class="tag-btn" onclick="fillRestaurant('Wendys')">Wendy's</button>
+                <button class="tag-btn" onclick="fillRestaurant('Starbucks')">Starbucks</button>
+                <button class="tag-btn" onclick="fillRestaurant('Red Robin')">Red Robin</button>
+                <button class="tag-btn" onclick="fillRestaurant('Tropical Smoothie')">Tropical Smoothie</button>
+                <button class="tag-btn" onclick="fillRestaurant('Sora Sushi')">Sora Sushi</button>
+            </div>
+            <div class="controls">
+                <button class="btn btn-primary" onclick="analyzeMenu()">🔍 Find Safe Options</button>
+            </div>
+        </div>
+        <div class="result-panel" id="output-box">
+            <div class="result-status-header" id="result-title"></div>
+            <div class="result-body" id="result-explanation"></div>
+            <div id="result-details"></div>
+        </div>
+    </div>
+    <canvas id="hidden-canvas"></canvas>
+    <script>
+        const GEMINI_API_KEY = "AIzaSyCVQmfTASSXohQX4Ent-CQKmDK3Xi_ue5o";
+
+        let currentMode = "scan";
+        let stream = null;
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('hidden-canvas');
+
+        const allergenRules = {
+            name: "a person with a sesame allergy",
+            instructions: `STRICT FORBIDDEN ITEMS (sesame allergy): sesame, sesame seeds, sesame oil, sesame flour,
+            tahini, tahina, sesame paste, til, teel, gingelly, benne, sesame salt, sesame butter, sesame extract,
+            black sesame, white sesame, toasted sesame, sesame seasoning, sesame dressing.
+            Also flag any "may contain sesame" or "processed in a facility with sesame" as CAUTION.
+            If any strict sesame item appears in the ingredients or as a named allergen, declare UNSAFE.
+            If only a "may contain" or cross-contamination warning is found, declare CAUTION.
+            Otherwise declare SAFE.`
+        };
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('mode-scan-btn').classList.toggle('active', mode === 'scan');
+            document.getElementById('mode-menu-btn').classList.toggle('active', mode === 'menu');
+            if (mode === 'scan') {
+                document.getElementById('scanner-ui').style.display = 'block';
+                document.getElementById('restaurant-ui').style.display = 'none';
+                startCamera();
+            } else {
+                document.getElementById('scanner-ui').style.display = 'none';
+                document.getElementById('restaurant-ui').style.display = 'flex';
+                stopCamera();
+            }
+            clearResults();
+        }
+
+        function fillRestaurant(name) {
+            document.getElementById('restaurant-input').value = name;
+            analyzeMenu();
+        }
+
+        function clearResults() {
+            document.body.className = '';
+            document.getElementById('output-box').style.display = 'none';
+            if (currentMode === 'scan') resetScanner();
+        }
+
+        async function startCamera() {
+            if (stream) return;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: false });
+                video.srcObject = stream;
+            } catch (err) { console.error("Camera error:", err); }
+        }
+
+        function stopCamera() {
+            if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+        }
+
+        function resetScanner() {
+            document.getElementById('webcam').style.display = 'block';
+            document.getElementById('captured-image-view').style.display = 'none';
+            document.getElementById('scanner-line').style.display = 'none';
+            document.getElementById('snap-btn').style.display = 'inline-flex';
+            document.getElementById('reset-btn').style.display = 'none';
+        }
+
+        async function captureAndAnalyze() {
+            const context = canvas.getContext('2d');
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+
+            document.getElementById('webcam').style.display = 'none';
+            document.getElementById('captured-image-view').src = dataUrl;
+            document.getElementById('captured-image-view').style.display = 'block';
+            document.getElementById('scanner-line').style.display = 'block';
+            document.getElementById('snap-btn').style.display = 'none';
+            document.getElementById('reset-btn').style.display = 'inline-flex';
+
+            showLoading("Scanning for sesame...");
+            const base64Data = dataUrl.split(',')[1];
+
+            const promptText = `You are a medical grade assistant helping ${allergenRules.name}. Rules: ${allergenRules.instructions}.
+            Analyze the ingredients label in the image carefully.
+            Output strictly JSON: {"status": "SAFE"|"UNSAFE"|"CAUTION", "verdict": "Short reason", "detected_items": ["items"], "extracted_text": "raw ingredient text"}`;
+
+            await callGemini({ contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: "image/jpeg", data: base64Data } }] }] }, renderScanResults);
+        }
+
+        async function analyzeMenu() {
+            const restaurantInput = document.getElementById('restaurant-input').value.trim();
+            if (!restaurantInput) return alert("Please enter a restaurant name.");
+
+            showLoading(`Checking ${restaurantInput}...`);
+
+            const promptText = `You are a dietary assistant helping ${allergenRules.name}. Rules: ${allergenRules.instructions}.
+            Evaluate the standard menu of "${restaurantInput}". Pay attention to hidden sesame in sauces, dressings, bread, buns, and marinades.
+            Output strictly JSON without any markdown formatting:
+            {
+              "status": "SUCCESS",
+              "verdict": "A quick summary of how safe this restaurant is for a sesame allergy.",
+              "safe": ["3-4 completely safe items"],
+              "modify": [{"item": "Item Name", "fix": "What to change or ask for"}],
+              "unsafe": ["3-4 items that contain sesame or are high risk"]
+            }`;
+
+            await callGemini({ contents: [{ parts: [{ text: promptText }] }] }, renderMenuResults);
+        }
+
+        async function callGemini(payload, renderCallback) {
+            payload.generationConfig = { responseMimeType: "application/json", temperature: 0.1 };
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+            try {
+                const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const data = await response.json();
+                let rawText = data.candidates[0].content.parts[0].text;
+                rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
+                renderCallback(JSON.parse(rawText));
+            } catch (e) {
+                console.error("Error:", e);
+                document.body.className = 'state-warning';
+                document.getElementById('result-title').innerText = "Connection Error";
+                document.getElementById('result-explanation').innerText = "Could not reach the server. Please read the label manually.";
+            }
+        }
+
+        function showLoading(text) {
+            document.body.className = 'state-loading';
+            document.getElementById('output-box').style.display = 'block';
+            document.getElementById('result-title').innerText = "⏳ " + text;
+            document.getElementById('result-explanation').innerText = "";
+            document.getElementById('result-details').innerHTML = "";
+            document.getElementById('scanner-line').style.display = currentMode === 'scan' ? 'block' : 'none';
+        }
+
+        function renderScanResults(result) {
+            document.getElementById('scanner-line').style.display = 'none';
+            if (result.status === "SAFE") {
+                document.body.className = 'state-safe';
+                document.getElementById('result-title').innerText = "🟢 CLEAR — SESAME FREE";
+            } else if (result.status === "UNSAFE") {
+                document.body.className = 'state-danger';
+                document.getElementById('result-title').innerText = "🚨 SESAME DETECTED";
+            } else {
+                document.body.className = 'state-warning';
+                document.getElementById('result-title').innerText = "⚠️ MAY CONTAIN SESAME";
+            }
+            document.getElementById('result-explanation').innerText = result.verdict;
+            const details = document.getElementById('result-details');
+            if (result.detected_items && result.detected_items.length > 0) {
+                details.innerHTML = `<div class="flagged-items"><strong>Flagged:</strong> ${result.detected_items.join(', ')}</div>`;
+            }
+        }
+
+        function renderMenuResults(result) {
+            document.body.className = '';
+            document.getElementById('result-title').innerText = "🍽️ Menu Breakdown";
+            document.getElementById('result-explanation').innerText = result.verdict;
+            let html = "";
+            if (result.safe && result.safe.length > 0) {
+                html += `<div class="menu-category cat-safe"><strong>🟢 Safe as-is:</strong><ul>`;
+                result.safe.forEach(i => html += `<li>${i}</li>`);
+                html += `</ul></div>`;
+            }
+            if (result.modify && result.modify.length > 0) {
+                html += `<div class="menu-category cat-modify"><strong>🟡 Safe to Modify:</strong><ul>`;
+                result.modify.forEach(i => html += `<li>${i.item} <em>(${i.fix})</em></li>`);
+                html += `</ul></div>`;
+            }
+            if (result.unsafe && result.unsafe.length > 0) {
+                html += `<div class="menu-category cat-unsafe"><strong>🚨 Do Not Order:</strong><ul>`;
+                result.unsafe.forEach(i => html += `<li>${i}</li>`);
+                html += `</ul></div>`;
+            }
+            document.getElementById('result-details').innerHTML = html;
+        }
+
+        setMode('scan');
+    </script>
+</body>
+</html>
